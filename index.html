@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+
+  <!-- ==== Social / SEO ==== --> 
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Align Your Query (MoCA + QueryREPA): Representation Alignment for Multimodality Medical Object Detection">
+  <meta name="keywords" content="medical object detection, multimodality, representation alignment, MoCA, QueryREPA, DETR, DINO">
+
+  <meta property="og:title" content="Align Your Query"/>
+  <meta property="og:description" content="Detector-agnostic alignment for multimodality medical object detection with Modality Tokens, MoCA, and QueryREPA."/>
+  <meta property="og:url" content="https://YOUR_ID.github.io/YOUR_REPO_NAME/"/>
+  <meta property="og:image" content="static/images/teaser.jpg"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="630"/>
+
+  <meta name="twitter:title" content="Align Your Query — MoCA + QueryREPA">
+  <meta name="twitter:description" content="Representation alignment of object queries for multimodality medical object detection.">
+  <meta name="twitter:image" content="static/images/teaser.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <title>Align Your Query</title>
+  <link rel="icon" type="image/png" href="static/images/favicon.png">
+
+  <!-- Fonts & CSS -->
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+  <link rel="stylesheet" href="static/css/bulma.min.css">
+  <link rel="stylesheet" href="static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="static/css/index.css">
+
+  <!-- JS -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="static/js/fontawesome.all.min.js"></script>
+  <script src="static/js/bulma-carousel.min.js"></script>
+  <script src="static/js/bulma-slider.min.js"></script>
+  <script src="static/js/index.js"></script>
+
+  <!-- MathJax -->
+  <script type="text/javascript" async
+    src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-MML-AM_CHTML"></script>
+  <script type="text/x-mathjax-config">
+    MathJax.Hub.Config({ tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]} });
+  </script>
+
+  <style>
+    .brand { color:#e11d48; } 
+    .muted { color:#666; }
+    .hero .title { line-height:1.2; }
+    hr.solid { border-top:2px solid #e5e5e5; }
+    .thumb { border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,.08); }
+    
+    table { border-collapse: collapse; width:100%; }
+    th, td { border:1px solid #ddd; text-align:center; padding:6px 8px; }
+    
+    .va-compare{
+      --pct:50;                     
+      position:relative;
+      width:100%;
+      aspect-ratio: 1 / 1;         
+      border-radius:12px;
+      overflow:hidden;
+      background:#111;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+      touch-action:none;            
+    }
+    
+    .va-compare .va-img{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      object-fit:cover;
+      user-select:none; pointer-events:none;
+    }
+    
+    .va-compare .va-input { z-index:1; }
+    
+    .va-compare .va-output{
+      z-index:2;
+      clip-path: inset(0 0 0 calc(var(--pct) * 1%));
+    }
+    
+    .va-compare .va-handle{
+      position:absolute; top:0; bottom:0;
+      left: calc(var(--pct) * 1%);
+      width:0;
+      border-left: 3px solid rgba(255,255,255,.95); 
+      z-index:3;
+      transform: translateX(-1.5px); 
+      pointer-events:none; 
+    }
+    
+    .va-compare .va-knob{
+      position:absolute; top:50%; left:0;
+      transform: translate(-50%, -50%);
+      display:inline-flex; align-items:center; justify-content:center;
+      width:36px; height:36px; border-radius:50%;
+      background:#fff; color:#111; font-weight:700;
+      box-shadow:0 3px 12px rgba(0,0,0,.25);
+      border:2px solid #111;
+      font-size:14px; line-height:1;
+      letter-spacing:1px;
+    }
+
+    .va-compare .va-tag{
+      position:absolute; top:10px;
+      padding:3px 8px;
+      font-size:12px; line-height:1;
+      color:#111; background:#fff; border-radius:6px;
+      z-index:4; opacity:.92;
+      user-select:none; pointer-events:none;
+    }
+    .va-compare .va-left{  left:10px;  }
+    .va-compare .va-right{ right:10px; }
+
+  </style>
+</head>
+  
+<script>
+(function(){
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  function initVA(container){
+    const leftLabel  = container.dataset.leftLabel  || 'Input';
+    const rightLabel = container.dataset.rightLabel || 'Output';
+    const leftTag    = container.querySelector('.va-left');
+    const rightTag   = container.querySelector('.va-right');
+    if (leftTag)  leftTag.textContent  = leftLabel;
+    if (rightTag) rightTag.textContent = rightLabel;
+
+    let dragging = false;
+
+    function setFromEvent(e){
+      const rect = container.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+      const pct = clamp((x / rect.width) * 100, 0, 100); 
+      container.style.setProperty('--pct', pct);
+    }
+
+    const start = (e)=>{ dragging = true; setFromEvent(e); e.preventDefault(); };
+    const move  = (e)=>{ if(!dragging) return; setFromEvent(e); };
+    const end   = ()=>{ dragging = false; };
+
+    container.addEventListener('mousedown', start);
+    container.addEventListener('touchstart', start, {passive:false});
+    window.addEventListener('mousemove', move, {passive:false});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchend', end);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('.va-compare').forEach(initVA);
+  });
+})();
+</script>
+
+<body>
+
+<!-- ================== HERO ================== -->
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title">
+            <span class="brand">Align Your Query</span>: Representation Alignment for Multimodality Medical Object Detection
+          </h1>
+
+          <div class="is-size-5 publication-authors">
+            <span class="author-block">Ara Seo<sup>1*</sup></span>,
+            <span class="author-block">Bryan Sangwoo Kim<sup>1*</sup></span>,
+            <span class="author-block">Hyungjin Chung<sup>2</sup></span>,
+            <span class="author-block">Jong Chul Ye<sup>1</sup></span>
+          </div>
+
+          <div class="is-size-6 publication-authors muted" style="margin-top:6px;">
+            <sup>1</sup> KAIST AI &nbsp;·&nbsp; 
+            <sup>2</sup> EverEX
+            <br><span style="font-size:0.9em;">* : Equal Contribution</span>
+          </div>
+
+
+          <!-- Links -->
+          <div style="margin-top:16px;">
+            <a href="static/pdfs/ayq_iclr2026.pdf" target="_blank"
+               class="external-link button is-normal is-rounded is-dark" style="margin:4px;">
+              <span class="icon"><i class="fas fa-file-pdf"></i></span><span>Paper (PDF)</span>
+            </a>
+            <a href="https://arxiv.org/abs/25xx.xxxxx" target="_blank"
+               class="external-link button is-normal is-rounded is-dark" style="margin:4px;">
+              <span class="icon"><i class="ai ai-arxiv"></i></span><span>arXiv</span>
+            </a>
+            <a href="https://github.com/YOUR_ID/YOUR_CODE_REPO" target="_blank"
+               class="external-link button is-normal is-rounded is-dark" style="margin:4px;">
+              <span class="icon"><i class="fab fa-github"></i></span><span>Code</span>
+            </a>
+          </div>
+
+          <!-- Teaser: Input vs Output vertical slider (3 x 2 tiles) -->
+          <div class="teaser-grid" style="margin-top:28px;">
+            <div class="columns is-multiline">
+              <!-- Tile 1 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-left-label="Input" data-right-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_cxr_input.png"  alt="Input 1">
+                  <img class="va-img va-output" src="static/images/teaser_cxr_result.png" alt="Output 1">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"Aortic enlargement in <b>CXR</b>"</i></p>
+              </div>
+
+              <!-- Tile 2 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-top-label="Input" data-bottom-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_mri1_input.png"  alt="Input 2">
+                  <img class="va-img va-output" src="static/images/teaser_mri1_result.png" alt="Output 2">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"Brain tumor in <b>MRI</b>"</i></p>
+              </div>
+
+              <!-- Tile 3 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-top-label="Input" data-bottom-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_mri2_input.png"  alt="Input 3">
+                  <img class="va-img va-output" src="static/images/teaser_mri2_result.png" alt="Output 3">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"Right heart ventricle in <b>cardiac MRI</b>"</i></p>
+              </div>
+
+              <!-- Tile 4 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-top-label="Input" data-bottom-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_pathology_input.png"  alt="Input 4">
+                  <img class="va-img va-output" src="static/images/teaser_pathology_result.png" alt="Output 4">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"Lymphocyte in <b>Pathology (H&E stain)"</b></i></p>
+              </div>
+
+              <!-- Tile 5 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-top-label="Input" data-bottom-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_ct_input.png"  alt="Input 5">
+                  <img class="va-img va-output" src="static/images/teaser_ct_result.png" alt="Output 5">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"COVID-19 infection in <b>lung CT</b>"</i></p>
+              </div>
+
+              <!-- Tile 6 -->
+              <div class="column is-one-third">
+                <div class="va-compare" data-top-label="Input" data-bottom-label="Output">
+                  <img class="va-img va-input"  src="static/images/teaser_colonoscopy_input.png"  alt="Input 6">
+                  <img class="va-img va-output" src="static/images/teaser_colonoscopy_result.png" alt="Output 6">
+                  <div class="va-handle" aria-hidden="true">
+                    <span class="va-knob" aria-hidden="true">‹ ›</span>
+                  </div>
+                </div>
+                <p class="muted" style="margin-top:8px;"><i>"Neoplastic polyp in <b>colon endoscope</b>"</i></p>
+              </div>
+            </div>
+          </div>
+          <!-- /Teaser -->
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================== ABSTRACT ================== -->
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-sixths">
+        <h2 class="title is-3">Abstract</h2>
+        <div class="content has-text-justified" style="font-size:18px;">
+          <p>
+            Medical object detection suffers when a single detector is trained on mixed medical modalities 
+            (<i>e.g.</i>, CXR, CT, MRI) due to heterogeneous statistics and disjoint representation spaces. 
+            To address this challenge, we turn to <b>representation alignment</b>, an approach that has proven 
+            effective for bringing features from different sources into a shared space. Specifically, we target 
+            the representations of DETR-style object queries and propose a simple, detector-agnostic framework 
+            to align them with modality context.
+          </p>
+          <p>
+            First, we define <b>modality tokens</b>: compact, text-derived embeddings encoding imaging modality 
+            that are lightweight and require no extra annotations. We integrate the modality tokens into the 
+            detection process via <b>Multimodality Context Attention (MoCA)</b>, mixing object-query 
+            representations via self-attention to propagate modality context within the query set. 
+            This preserves DETR-style architectures and adds negligible latency while injecting modality cues 
+            into object queries.
+          </p>
+          <p>
+            We further introduce <b>QueryREPA</b>, a short pretraining stage that aligns query representations 
+            to their modality tokens using a task-specific contrastive objective with modality-balanced batches. 
+            Together, MoCA and QueryREPA produce modality-aware, class-faithful queries that transfer effectively 
+            to downstream training.
+          </p>
+          <p>
+            Across diverse modalities trained altogether, the proposed approach consistently improves AP with 
+            minimal overhead and no architectural modifications, offering a practical path toward robust 
+            multimodality medical object detection.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================== METHOD ================== -->
+<section class="section hero">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-sixths">
+        <h2 class="title is-3">Method</h2>
+        <div class="content has-text-justified" style="font-size:18px;">
+
+          <!-- Main Method -->
+          <img class="thumb" src="static/images/main_method.png" alt="Main Method figure" style="margin-top:10px;">
+          <p class="muted" style="margin-top:12px; font-size:16px; line-height:1.5;">
+            <b>(a) Contrastive Representation Alignment of Object Queries (QueryREPA):</b> 
+            During a pretraining stage, a text-derived <i>modality token</i> is selected for each image in a modality-balanced batch 
+            (<i>e.g.</i>, a CXR and an MRI). Object query representations are aligned with the modality token through a contrastive 
+            alignment loss to produce queries aware of modality context. <br><br>
+            <b>(b) Multimodality Context Attention (MoCA):</b> 
+            For a given image, a modality token is selected and concatenated with the set of object queries to form an augmented query set. 
+            Information fusion occurs in the self-attention layer of the decoder, allowing each object query to attend to the modality token 
+            to explicitly attain modality-specific context.
+          </p>
+
+          <hr class="solid" style="margin:30px 0;">
+
+          <!-- Comparison -->
+          <img class="thumb" src="static/images/comparison.png" alt="Comparison with other detectors" style="margin-top:10px;">
+          <p class="muted" style="margin-top:12px; font-size:16px; line-height:1.5;">
+            Comparison of text/modality integration in DETR-style detectors. <br>
+            <b>(a) DINO (baseline):</b> image-only encoder–decoder with query selection. <br>
+            <b>(b) Grounding DINO:</b> language-guided query selection and cross-attention in the decoder 
+            (object queries attend to a sequence of text tokens). <br>
+            <b>(c) Ours (DINO+MoCA):</b> append compact modality tokens to the object queries and fuse by self-attention in the decoder; 
+            the tokens act as semantic anchors that refine queries in a modality-aware way with minimal overhead.
+          </p>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================== RESULTS ================== -->
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-sixths">
+        <h2 class="title is-3">Experimental Results</h2>
+        <div class="content has-text-justified" style="font-size:18px;">
+
+          <!-- Qualitative Results -->
+          <img class="thumb" src="static/images/qualitative_revised.png" 
+               alt="Qualitative comparison results" style="margin-top:10px;">
+          <p class="muted" style="margin-top:12px; font-size:16px; line-height:1.5;">
+            <b>Qualitative Comparison.</b> Comparison results between various state-of-the-art detection methods and 
+            the proposed method is shown above. Our method effectively leverages modality context to significantly 
+            enhance anomaly localization (<span style="color:red; font-weight:bold;">red</span>), compared to baseline results 
+            (<span style="color:blue; font-weight:bold;">blue</span>). Ground truth bounding boxes are 
+            <span style="color:green; font-weight:bold;">green</span>. For cases where the bounding boxes are small, 
+            insets show an enlarged view of the highlighted yellow region.
+          </p>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================== GALLERY ================== -->
+<section class="hero teaser">
+  <div class="hero-body">
+    <div class="container">
+
+      <!-- Title -->
+      <div class="columns is-centered" style="margin-top:50px">
+        <h2 class="title is-3">Gallery</h2>
+      </div>
+
+      <!-- Carousel -->
+      <div id="gallery-carousel" class="carousel results-carousel" style="margin-top:20px">
+
+        <!-- CXR -->
+        <div class="item">
+          <p style="margin-bottom:18px; font-size:26px; text-align:center;">
+            Qualitative comparisons on chest <b>CXR</b> images
+          </p>
+          <img class="thumb" src="static/images/cxr_supple.png" alt="CXR qualitative results"/>
+          <p class="muted" style="margin-top:14px; font-size:16px; text-align:center;">
+            <span style="color:red; font-weight:bold;">Red</span>: ours /
+            <span style="color:green; font-weight:bold;">Green</span>: ground-truth /
+            <span style="color:blue; font-weight:bold;">Blue</span>: baseline detectors 
+          </p>
+        </div>
+
+        <!-- MRI -->
+        <div class="item">
+          <p style="margin-bottom:18px; font-size:26px; text-align:center;">
+            Qualitative comparisons on <b>MRI</b> images
+          </p>
+          <img class="thumb" src="static/images/mri_supple.png" alt="MRI qualitative results"/>
+          <p class="muted" style="margin-top:14px; font-size:16px; text-align:center;">
+            <span style="color:red; font-weight:bold;">Red</span>: ours /
+            <span style="color:green; font-weight:bold;">Green</span>: ground-truth /
+            <span style="color:blue; font-weight:bold;">Blue</span>: baseline detectors
+          </p>
+        </div>
+
+        <!-- Colonoscopy -->
+        <div class="item">
+          <p style="margin-bottom:18px; font-size:26px; text-align:center;">
+            Qualitative comparisons on <b>Colonoscopy</b> images
+          </p>
+          <img class="thumb" src="static/images/colonoscopy_supple.png" alt="Colonoscopy qualitative results"/>
+          <p class="muted" style="margin-top:14px; font-size:16px; text-align:center;">
+            <span style="color:red; font-weight:bold;">Red</span>: ours /
+            <span style="color:green; font-weight:bold;">Green</span>: ground-truth /
+            <span style="color:blue; font-weight:bold;">Blue</span>: baseline detectors
+          </p>
+        </div>
+
+        <!-- Pathology -->
+        <div class="item">
+          <p style="margin-bottom:18px; font-size:26px; text-align:center;">
+            Qualitative comparisons on <b>Pathology</b> images
+          </p>
+          <img class="thumb" src="static/images/pathology_supple.png" alt="Pathology qualitative results"/>
+          <p class="muted" style="margin-top:14px; font-size:16px; text-align:center;">
+            <span style="color:red; font-weight:bold;">Red</span>: ours /
+            <span style="color:green; font-weight:bold;">Green</span>: ground-truth /
+            <span style="color:blue; font-weight:bold;">Blue</span>: baseline detectors
+          </p>
+        </div>
+
+        <!-- CT -->
+        <div class="item">
+          <p style="margin-bottom:18px; font-size:26px; text-align:center;">
+            Qualitative comparisons on <b>CT</b> images
+          </p>
+          <img class="thumb" src="static/images/ct_supple.png" alt="CT qualitative results"/>
+          <p class="muted" style="margin-top:14px; font-size:16px; text-align:center;">
+            <span style="color:red; font-weight:bold;">Red</span>: ours /
+            <span style="color:green; font-weight:bold;">Green</span>: ground-truth /
+            <span style="color:blue; font-weight:bold;">Blue</span>: baseline detectors
+          </p>
+        </div>
+
+
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p class="muted">
+            Built on an academic project page template (Bulma). You are free to borrow the source; please include attribution.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof bulmaCarousel !== 'undefined') {
+      bulmaCarousel.attach('#results-carousel', { slidesToScroll:1, slidesToShow:1 });
+    }
+  });
+
+  window.addEventListener('load', function() {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.scrollTo(0, 0);
+  });
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
